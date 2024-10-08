@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Face Recognition</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .custom-cursor {
+            width: 20px;
+            height: 20px;
+            border: 2px solid white;
+            border-radius: 50%;
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            transition: all 0.1s ease-out;
+        }
+        .custom-cursor.hover {
+            transform: scale(1.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center">
+    <canvas id="bg-canvas" class="fixed top-0 left-0 w-full h-full -z-10"></canvas>
+    <canvas id="particle-canvas" class="fixed top-0 left-0 w-full h-full pointer-events-none"></canvas>
+    <div class="custom-cursor"></div>
+
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full relative z-10">
+        <h1 class="text-3xl font-bold mb-6 text-center text-blue-600">AI Face Recognition</h1>
+        <div class="mb-4">
+            <video id="video" autoplay class="hidden"></video>
+            <canvas id="canvas" width="600" height="400" class="mx-auto border-4 border-blue-500 rounded-lg"></canvas>
+        </div>
+        <div class="flex justify-center space-x-4">
+            <button id="startBtn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                Start Camera
+            </button>
+            <button id="stopBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
+                Stop Camera
+            </button>
+        </div>
+        <div id="stats" class="mt-4 text-center text-gray-700"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="script.js"></script>
+    <script>
+        // 3D background
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('bg-canvas'), alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        const geometry = new THREE.TorusKnotGeometry(10, 3, 100, 16);
+        const material = new THREE.MeshBasicMaterial({ color: 0x6366f1, wireframe: true });
+        const torusKnot = new THREE.Mesh(geometry, material);
+        scene.add(torusKnot);
+
+        camera.position.z = 30;
+
+        const starGeometry = new THREE.BufferGeometry();
+        const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1 });
+
+        const starVertices = [];
+        for (let i = 0; i < 5000; i++) {
+            const x = (Math.random() - 0.5) * 2000;
+            const y = (Math.random() - 0.5) * 2000;
+            const z = (Math.random() - 0.5) * 2000;
+            starVertices.push(x, y, z);
+        }
+
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            torusKnot.rotation.x += 0.005;
+            torusKnot.rotation.y += 0.005;
+            stars.rotation.x += 0.0002;
+            stars.rotation.y += 0.0002;
+            renderer.render(scene, camera);
+        }
+
+        animate3D();
+
+        // Particle effect
+        const particleCanvas = document.getElementById('particle-canvas');
+        const particleCtx = particleCanvas.getContext('2d');
+        let width, height, particles;
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 5 + 1;
+                this.speedX = Math.random() * 3 - 1.5;
+                this.speedY = Math.random() * 3 - 1.5;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                
+                if (this.size > 0.1) this.size -= 0.1;
+            }
+            draw() {
+                particleCtx.fillStyle = 'rgba(255,255,255,0.8)';
+                particleCtx.strokeStyle = 'rgba(255,255,255,0.8)';
+                particleCtx.lineWidth = 2;
+                particleCtx.beginPath();
+                particleCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                particleCtx.closePath();
+                particleCtx.fill();
+            }
+        }
+
+        function initParticles() {
+            width = particleCanvas.width = window.innerWidth;
+            height = particleCanvas.height = window.innerHeight;
+            particles = [];
+        }
+
+        function animateParticles() {
+            particleCtx.clearRect(0, 0, width, height);
+            handleParticles();
+            requestAnimationFrame(animateParticles);
+        }
+
+        function handleParticles() {
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+                
+                if (particles[i].size <= 0.1) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        function createParticles(e) {
+            const xPos = e.x;
+            const yPos = e.y;
+            
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(xPos, yPos));
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            // Resize 3D background
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Resize particle canvas
+            initParticles();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            createParticles(e);
+        });
+
+        initParticles();
+        animateParticles();
+
+        // Custom cursor
+        const cursor = document.querySelector('.custom-cursor');
+        const links = document.querySelectorAll('a');
+        const buttons = document.querySelectorAll('button');
+
+        document.addEventListener('mousemove', (e) => {
+            cursor.style.left = e.clientX + 'px';
+            cursor.style.top = e.clientY + 'px';
+        });
+
+        links.forEach(link => {
+            link.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+            link.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+        });
+
+        buttons.forEach(button => {
+            button.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+            button.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+        });
+    </script>
+</body>
+</html>
